@@ -1,63 +1,37 @@
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-#[derive(Serialize, Deserialize, Debug)]
-struct RegisterWorker {
-    address: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct RegisterResponse {
-    worker_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Job {
-    id: String,
-    data: String,
-}
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio::net::TcpListener;
+use futures_util::sink::SinkExt;
+use futures_util::stream::StreamExt;
 
 #[tokio::main]
 async fn main() {
-    let server_address = "http://10.0.0.75:3000"; // Update with your Axum server's IP address
-    let worker_address = "192.168.56.1"; // The address of this worker
-
-    let client = Client::new();
-
-    // Register the worker
-    let register_worker = RegisterWorker {
-        address: worker_address.to_string(),
-    };
-
-    let register_response: RegisterResponse = client
-        .post(format!("{}/register", server_address))
-        .json(&register_worker)
-        .send()
+    let server_address = "ws://<SERVER_IP>:3000/ws"; // Update with the server's IP address
+    
+    let (mut ws_stream, _) = connect_async(server_address)
         .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+        .expect("Failed to connect to WebSocket");
 
-    let worker_id = register_response.worker_id;
-    println!("Registered worker with ID: {}", worker_id);
+    println!("Connected to WebSocket!");
 
-    // Simulate submitting a job (you can replace this with actual GPU task logic)
-    let job = Job {
-        id: Uuid::new_v4().to_string(),
-        data: "process this job".to_string(),
-    };
+    // Send a test message to the server
+    let message = "Hello from worker!".to_string();
+    ws_stream.send(Message::Text(message)).await.expect("Failed to send message");
 
-    let response = client
-        .post(format!("{}/submit", server_address))
-        .json(&job)
-        .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
+    // Keep listening for messages (you can adjust this to handle real job processing)
+    loop {
+        let msg = ws_stream.next().await;
 
-    println!("Server response: {}", response);
+        match msg {
+            Some(Ok(Message::Text(text))) => {
+                println!("Received message: {}", text);
+                // Handle the job or task here, such as processing GPU tasks
+            }
+            Some(Err(e)) => {
+                eprintln!("Error: {}", e);
+                break;
+            }
+            _ => {}
+        }
+    }
 }
